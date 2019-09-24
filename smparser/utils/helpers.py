@@ -4,6 +4,8 @@ from pdfminer.converter import TextConverter
 from pdfminer.layout import LAParams
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
+from bs4 import BeautifulSoup
+import mailparser
 import io
 
 
@@ -25,6 +27,16 @@ def pdfparser(data):
         data = retstr.getvalue()
 
     return data
+
+
+def emailparser(email_file):
+    if isinstance(email_file, bytes):
+        email_parser = mailparser.parse_from_bytes(email_file)
+    elif isinstance(email_file, str):
+        email_parser = mailparser.parse_from_file(email_file)
+    else:
+        raise TypeError("email_file must be bytes or str")
+    return email_parser
 
 
 class MLStripper(HTMLParser):
@@ -58,3 +70,9 @@ def goto_element(xpath, dom):
     ET.ElementTree(elem).write(retstr, encoding='unicode')
     retstr.seek(0)
     return retstr.read()
+
+
+def goto_and_strip_html(dom, xpath):
+    dom = BeautifulSoup(dom, features="html.parser")
+    dom = goto_element(xpath, str(dom))
+    return strip_html_tags(dom)

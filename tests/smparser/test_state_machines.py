@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import Mock, MagicMock
 
-from smparser.state_machines import StateMachine, HTMLStateMachine, PDFStateMachine, State
+from smparser.state_machines import StateMachine, HTMLStateMachine, PDFStateMachine, State, MailStateMachine
 
 
 class StateMachineTest(unittest.TestCase):
@@ -77,3 +77,37 @@ class PDFStateMachineTest(unittest.TestCase):
         state_machine = PDFStateMachine([self.state], pdf_in_bytes)
         self.assertEqual(type(state_machine.data), list)
 
+
+class EmailStateMachineTest(unittest.TestCase):
+    def setUp(self):
+        email_file = os.path.dirname(__file__) + '/fixtures/booking.eml'
+        self.state_machine = MailStateMachine([], email_file)
+
+    def test_pass_email_has_dom(self):
+        self.assertTrue(len(self.state_machine.data) > 20)
+
+    def test_meta_fields(self):
+        email_headers = ['Delivered-To', 'Received', 'X-Google-Smtp-Source', 'X-Received', 'ARC-Seal',
+                         'ARC-Message-Signature', 'ARC-Authentication-Results', 'Return-Path', 'Received-SPF',
+                         'Authentication-Results', 'Content-Transfer-Encoding', 'DKIM-Signature', 'Content-Type',
+                         'MIME-Version', 'Date', 'To', 'Sender', 'Reply-To', 'Subject', 'From', 'X-Bme-Id',
+                         'Message-Id']
+
+        self.assertEqual(self.state_machine._email.attachments, [])
+        self.assertEqual(self.state_machine._email.from_, [('Orange Wings Wiener Neustadt',
+                                                            'customer.service@booking.com')])
+        self.assertEqual(self.state_machine._email.delivered_to, [('', 'rafalonso.almeida@gmail.com')])
+        self.assertEqual(self.state_machine._email.to, [('', 'rafalonso.almeida@gmail.com')])
+        self.assertListEqual(list(self.state_machine._email.headers.keys()), email_headers)
+        self.assertEqual(self.state_machine._email.subject,
+                         '🛄 Thanks! Your booking is confirmed at Orange Wings Wiener Neustadt')
+        self.assertEqual(str(self.state_machine._email.date), '2019-08-31 16:05:09')
+
+    def test_parse_email_fields(self):
+        date_regex = r'.*?([0-9]{1,2}\s[A-Z][a-z]+\s[0-9]{4})'
+        check_in_state = State('check_in', date_regex, next_state='check_out')
+        check_out_state = State('check_out', date_regex)
+        self.state_machine.states = [check_in_state, check_out_state]
+        machine_run = self.state_machine.runAll('check_in')
+        self.assertEqual(machine_run[0][0], '31 August 2019')
+        self.assertEqual(machine_run[1][0], '1 September 2019')

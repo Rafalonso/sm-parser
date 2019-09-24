@@ -1,14 +1,26 @@
-from smparser.utils.helpers import pdfparser, strip_html_tags, goto_element
+from smparser.utils.helpers import pdfparser, emailparser, goto_and_strip_html
+import logging
 import re
+
+
+logger = logging.getLogger()
 
 
 class StateMachine:
     states = {}
     data = []
 
-    def __init__(self, states, *args, **kwargs):
-        for state in states:
-            self[state.name] = state
+    def __init__(self, states, debug=False, *args, **kwargs):
+        self.states = states
+        if debug:
+            logger.setLevel('DEBUG')
+
+    def __setattr__(self, key, value):
+        if key == 'states':
+            for v in value:
+                self[v.name] = v
+        else:
+            super().__setattr__(key, value)
 
     def __setitem__(self, key, value):
         self.states[key] = value
@@ -26,8 +38,9 @@ class StateMachine:
         for d in self.data:
             for state in states:
                 state = self[state]
+                logger.debug(f"STATE: '{state.name}' | DATA: '{d}'")
                 match = state.match(d)
-                if match:
+                if match is not None:
                     yield match
                     states = state.next()
                     break
@@ -47,8 +60,7 @@ class HTMLStateMachine(TextStateMachine):
         if filename:
             with open(filename, 'rb') as f:
                 dom = f.read()
-        dom = goto_element(xpath, dom)
-        self.data = strip_html_tags(dom)
+        self.data = goto_and_strip_html(dom, xpath)
         super(HTMLStateMachine, self).__init__(states, *args, **kwargs)
 
 
@@ -56,6 +68,12 @@ class PDFStateMachine(TextStateMachine):
     def __init__(self, states, data, *args, **kwargs):
         self.data = pdfparser(data)
         super(PDFStateMachine, self).__init__(states, *args, **kwargs)
+
+
+class MailStateMachine(HTMLStateMachine):
+    def __init__(self, states, email_file, *args, **kwargs):
+        self._email = emailparser(email_file)
+        super().__init__(states, dom=''.join(self._email.text_html), *args, **kwargs)
 
 
 class State:
@@ -66,7 +84,9 @@ class State:
         self.next_state = next_state if isinstance(next_state, list) else [next_state]
 
     def match(self, text):
-        return re.match(self.pattern, text)
+        logger.debug(f'PATTERN: {self.pattern} | DATA: {text}')
+        matched = re.match(self.pattern, text)
+        return matched.groups() if matched else None
 
     def next(self):
         return self.next_state
